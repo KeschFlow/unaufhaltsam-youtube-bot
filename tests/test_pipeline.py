@@ -49,10 +49,8 @@ class PipelineTests(unittest.TestCase):
         self.temporary.cleanup()
 
     def test_result_hooks_are_truthful(self) -> None:
-        self.assertEqual(result_hook(10), "BOT FAILED. HUMAN STILL LEADS.")
-        self.assertEqual(result_hook(26), "BOT TIES THE HUMAN RECORD.")
-        self.assertIn("BEATS", result_hook(27))
-        self.assertEqual(result_hook(30), "THE BOT REACHED THE WALL.")
+        self.assertIn("HUMAN RECORD REMAINS SEPARATE", result_hook(10))
+        self.assertEqual(result_hook(15, cap_reached=True), "BOT RUN CAP REACHED AT 15.")
         self.assertEqual(result_hook(30, True), "LEVEL 30 BROKEN.")
 
     def test_sqlite_schema_and_duplicate_run_guard(self) -> None:
@@ -178,7 +176,7 @@ class PipelineTests(unittest.TestCase):
         low = self.run
         high = RunResult(
             attempt_id="attempt-high", timestamp=datetime.now(UTC).isoformat(),
-            reached_boxes=20, rounds_completed=18, duration_seconds=30,
+            reached_boxes=15, rounds_completed=13, duration_seconds=30,
             failed=True, wall_reached=False, completed=False,
             recording_path=str(self.recording), leaderboard_untouched=True,
         )
@@ -222,6 +220,21 @@ class PipelineTests(unittest.TestCase):
         payload = json.loads(queue_path.read_text(encoding="utf-8"))
         self.assertFalse(payload["eligible"])
         self.assertEqual(payload["status"], "below_threshold")
+
+    def test_hard_cap_and_publish_window(self) -> None:
+        capped = replace(self.run, reached_boxes=15, rounds_completed=13, failed=False, cap_reached=True)
+        capped.validate()
+        self.assertTrue(capped.is_publishable)
+        self.assertFalse(replace(self.run, reached_boxes=9).is_publishable)
+        with self.assertRaises(ValueError):
+            replace(self.run, reached_boxes=16).validate()
+
+    def test_renderer_blocks_outside_publish_window(self) -> None:
+        from unaufhaltsam_youtube.renderer import RenderError
+        with self.assertRaises(RenderError):
+            render_short(replace(self.run, reached_boxes=9), 1, self.root / "low.mp4")
+        with self.assertRaises(RenderError):
+            render_short(replace(self.run, reached_boxes=16), 1, self.root / "high.mp4")
 
     def test_content_policy_uses_real_run_and_blocks_forbidden_format(self) -> None:
         db = Database(self.root / "test.sqlite3")
