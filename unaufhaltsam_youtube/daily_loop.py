@@ -29,6 +29,7 @@ def _load_run(database: Database, attempt_id: str) -> RunResult:
         wall_reached=bool(row["wall_reached"]), completed=bool(row["completed"]),
         recording_path=row["recording_path"], strategy=row["strategy"],
         leaderboard_untouched=bool(row["leaderboard_untouched"]),
+        cap_reached=bool(row["cap_reached"]),
     )
 
 
