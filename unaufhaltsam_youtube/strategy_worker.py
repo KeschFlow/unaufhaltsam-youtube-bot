@@ -63,9 +63,7 @@ def rank_queue(config: Config, database: Database) -> list[RankedCandidate]:
         }
         run_rows = {
             row["attempt_id"]: row
-            for row in db.execute(
-                "SELECT * FROM runs ORDER BY timestamp"
-            )
+            for row in db.execute("SELECT * FROM runs ORDER BY timestamp")
         }
         ratings = {
             row["attempt_id"]: row["performance_rating"]
@@ -90,7 +88,7 @@ def rank_queue(config: Config, database: Database) -> list[RankedCandidate]:
         if row is None:
             raise ValueError(f"Queue-Run fehlt in SQLite: {attempt_id}")
         score = int(row["reached_boxes"])
-        eligible = score >= config.minimum_publish_score
+        eligible = 10 <= score <= 15 and score >= config.minimum_publish_score
         if payload.get("eligible") != eligible:
             update_queue_item(path, {"eligible": eligible})
         if config.publish_mode == "public" and not eligible:
@@ -106,9 +104,12 @@ def rank_queue(config: Config, database: Database) -> list[RankedCandidate]:
             wall_reached=bool(row["wall_reached"]), completed=bool(row["completed"]),
             recording_path=row["recording_path"], strategy=row["strategy"],
             leaderboard_untouched=bool(row["leaderboard_untouched"]),
+            cap_reached=bool(row["cap_reached"]),
         )
         content = decide_content(database, run)
-        priority_score, reason = queue_priority(score, bool(row["completed"]), new_best, ratings.get(attempt_id))
+        priority_score, reason = queue_priority(
+            score, bool(row["completed"]), new_best, ratings.get(attempt_id)
+        )
         candidate = RankedCandidate(
             attempt_id, score, priority_score, reason, hook, title_variant, overlay_variant,
             content.content_format, content.event, content.visualization,
