@@ -19,6 +19,7 @@ from .performance import hook_type
 from .publisher import PublishError, publish
 from .queue import update_queue_item, write_queue_item
 from .renderer import RenderError, render_short
+from .models import BOT_HARD_CAP, BOT_MIN_PUBLISH_SCORE
 from .strategy_worker import recommend_variants
 
 
@@ -47,9 +48,23 @@ def execute_once(config: Config, database: Database) -> dict:
         database.event("CRITICAL", "leaderboard_guardrail", "Leaderboard-Schreibversuch", attempt_id)
         raise BrowserGameError("Leaderboard-Guardrail ausgeloest")
     summary = {"run": run.as_dict(), "published": False}
-    if run.completed:
+    if run.reached_boxes > BOT_HARD_CAP:
+        raise ValueError(f"HARD CAP VIOLATION: {run.reached_boxes} > {BOT_HARD_CAP}")
+    eligible = (
+        run.is_publishable
+        and run.reached_boxes >= max(config.minimum_publish_score, BOT_MIN_PUBLISH_SCORE)
+    )
+    summary["eligible"] = eligible
+    if not eligible:
+        database.event(
+            "INFO", "below_publish_window",
+            f"Run bleibt unter Publish-Fenster {BOT_MIN_PUBLISH_SCORE}-{BOT_HARD_CAP}",
+            attempt_id, run.as_dict(),
+        )
+        return summary
+    if run.completed and not run.cap_reached:
         database.event("CRITICAL", "system_alert", "LEVEL 30 BROKEN", attempt_id, run.as_dict())
-    selected_hook = hook_type(run.reached_boxes, run.completed)
+    selected_hook = hook_type(run.reached_boxes, run.completed and not run.cap_reached)
     title_variant, overlay_variant = recommend_variants(database, selected_hook)
     content_decision = decide_content(database, run)
     video_path = config.output_dir / "videos" / f"{attempt_id}.mp4"
@@ -63,7 +78,6 @@ def execute_once(config: Config, database: Database) -> dict:
     metadata_path = config.output_dir / "metadata" / f"{attempt_id}.json"
     write_metadata(metadata, metadata_path)
     database.add_video(attempt_id, video_path, metadata_path)
-    eligible = run.reached_boxes >= config.minimum_publish_score
     queue_path = write_queue_item(
         config.output_dir, attempt_id, run.reached_boxes, eligible, video_path, metadata_path,
         config.publish_mode, "ready" if eligible else "below_threshold", content={
@@ -78,9 +92,6 @@ def execute_once(config: Config, database: Database) -> dict:
         "video_path": str(video_path), "metadata_path": str(metadata_path),
         "queue_path": str(queue_path), "eligible": eligible,
     })
-    if not eligible:
-        database.event("INFO", "below_publish_threshold", "Run wird nicht publiziert", attempt_id)
-        return summary
     if database.count_public_uploads_today() >= config.max_uploads_per_day:
         database.event("INFO", "daily_upload_limit", "Upload-Tageslimit erreicht", attempt_id)
         update_queue_item(queue_path, {"status": "daily_limit"})
@@ -109,7 +120,7 @@ def run_worker(config: Config, once: bool = False) -> list[dict]:
         try:
             summary = execute_once(config, database)
             results.append(summary)
-            if summary["run"]["completed"]:
+            if summary["run"].get("cap_reached") or summary["run"]["completed"]:
                 break
         except (BrowserGameError, RenderError, PublishError, ValueError) as exc:
             event_type = (
