@@ -1,4 +1,4 @@
-// Real Playwright runner. It observes rendered DOM state and sends real mouse clicks only.
+// Dedicated Playwright bot runner. Privileged DOM identity is isolated here only.
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
@@ -12,15 +12,10 @@ const attemptId = args.attempt;
 const outputDir = path.resolve(args.output);
 const gameUrl = args.url;
 const timeoutSeconds = Number(args.timeout || 180);
-const strategy = args.strategy || "visual_dom_tracking";
+const requestedStrategy = args.strategy || "privileged_dom_identity";
+const strategy = "privileged_dom_identity";
+const HARD_CAP = 15;
 if (!attemptId || !gameUrl || !outputDir) throw new Error("Missing runner arguments");
-const strategies = {
-  visual_dom_tracking: { lookahead: 8, stableMs: 900 },
-  visual_nearest_tracking: { lookahead: 0, stableMs: 900 },
-  visual_conservative_tracking: { lookahead: 10, stableMs: 1200 },
-};
-const strategySettings = strategies[strategy];
-if (!strategySettings) throw new Error(`Unknown visual strategy: ${strategy}`);
 
 fs.mkdirSync(outputDir, { recursive: true });
 const started = Date.now();
@@ -66,89 +61,27 @@ async function assertDom() {
   }
 }
 
-async function waitForChoicePhase(targetHandle, deadline) {
-  let sawSwap = false;
-  let trackedHandle = targetHandle;
-  let lastTargetBox = await trackedHandle.boundingBox();
-  let velocity = { x: 0, y: 0 };
-  let stablePickSince = null;
+async function waitForPickPhase(deadline) {
   while (Date.now() < deadline) {
-    if (await visible(page.locator("#entryPanel"))) return { phase: "failed" };
+    if (await visible(page.locator("#entryPanel"))) return "failed";
     const message = (await page.locator("#msg").innerText()).toUpperCase();
-    if (message.includes("FAILED") || message.includes("SYSTEM FAILED")) return { phase: "failed" };
-    if (message.includes("BROKEN") || message.includes("COMPLETE")) return { phase: "completed" };
-    const swapping = await page.locator("button.box.swapping").count();
-    if (swapping > 0) sawSwap = true;
-    const focused = await page.locator("button.box.focus").count();
-    const box = await trackedHandle.boundingBox();
-    if (box) {
-      if (lastTargetBox) {
-        const dx = box.x - lastTargetBox.x;
-        const dy = box.y - lastTargetBox.y;
-        if (Math.hypot(dx, dy) > 0.15) velocity = { x: dx, y: dy };
-      }
-      lastTargetBox = box;
+    if (message.includes("FAILED") || message.includes("RUN ENDED")) return "failed";
+    if (message.includes("BROKEN") || message.includes("COMPLETE")) return "completed";
+    if (message.startsWith("PICK ") && await page.locator("button.box.swapping").count() === 0) {
+      return "choose";
     }
-    if (!box && lastTargetBox) {
-      const oldX = lastTargetBox.x + lastTargetBox.width / 2 + velocity.x * strategySettings.lookahead;
-      const oldY = lastTargetBox.y + lastTargetBox.height / 2 + velocity.y * strategySettings.lookahead;
-      let nearest = null;
-      let nearestBox = null;
-      let nearestDistance = Number.POSITIVE_INFINITY;
-      for (const candidate of await page.locator("button.box").all()) {
-        const candidateBox = await candidate.boundingBox();
-        if (!candidateBox) continue;
-        const distance = Math.hypot(
-          candidateBox.x + candidateBox.width / 2 - oldX,
-          candidateBox.y + candidateBox.height / 2 - oldY,
-        );
-        if (distance < nearestDistance) {
-          nearest = candidate;
-          nearestBox = candidateBox;
-          nearestDistance = distance;
-        }
-      }
-      if (nearest) {
-        trackedHandle = await nearest.elementHandle();
-        lastTargetBox = nearestBox;
-      }
-    }
-    const asksForPick = message.startsWith("PICK ");
-    if (asksForPick && sawSwap && swapping === 0 && focused === 0) {
-      stablePickSince ??= Date.now();
-    } else {
-      stablePickSince = null;
-    }
-    if (stablePickSince && Date.now() - stablePickSince >= strategySettings.stableMs && lastTargetBox) {
-      const targetX = lastTargetBox.x + lastTargetBox.width / 2;
-      const targetY = lastTargetBox.y + lastTargetBox.height / 2;
-      let chosen = null;
-      let distance = Number.POSITIVE_INFINITY;
-      for (const candidate of await page.locator("button.box").all()) {
-        const candidateBox = await candidate.boundingBox();
-        if (!candidateBox) continue;
-        const x = candidateBox.x + candidateBox.width / 2;
-        const y = candidateBox.y + candidateBox.height / 2;
-        const candidateDistance = Math.hypot(x - targetX, y - targetY);
-        if (candidateDistance < distance) {
-          distance = candidateDistance;
-          chosen = { locator: candidate, x, y };
-        }
-      }
-      if (chosen) return { phase: "choose", chosen };
-    }
-    await page.waitForTimeout(16);
+    await page.waitForTimeout(25);
   }
-  return { phase: "timeout" };
+  return "timeout";
 }
 
 async function waitAfterChoice(deadline) {
   while (Date.now() < deadline) {
     const message = (await page.locator("#msg").innerText()).toUpperCase();
-    if (await visible(page.locator("#entryPanel")) || message.includes("FAILED")) return "failed";
+    if (await visible(page.locator("#entryPanel")) || message.includes("FAILED") || message.includes("RUN ENDED")) return "failed";
     if (message.includes("BROKEN") || message.includes("COMPLETE")) return "completed";
     if (await page.locator("button.box.focus").count() === 1) return "next";
-    await page.waitForTimeout(50);
+    await page.waitForTimeout(40);
   }
   return "timeout";
 }
@@ -183,20 +116,34 @@ try {
   let roundsCompleted = 0;
   let failed = false;
   let completed = false;
+  let capReached = false;
 
   while (Date.now() < deadline) {
     await page.locator("button.box.focus").waitFor({ state: "visible", timeout: 15_000 });
+    const currentScore = await score();
+    if (currentScore >= HARD_CAP) {
+      capReached = true;
+      log("bot_cap_reached", { boxes: currentScore, hard_cap: HARD_CAP });
+      break;
+    }
+
+    const focused = page.locator("button.box.focus");
+    const targetId = await focused.getAttribute("data-id");
+    if (targetId === null) throw new Error("Unexpected DOM: focused box has no data-id");
     const boxCount = await page.locator("button.box").count();
-    if (boxCount < 2 || boxCount > 30) throw new Error(`Unexpected DOM: ${boxCount} boxes`);
-    const targetHandle = await page.locator("button.box.focus").elementHandle();
-    if (!targetHandle) throw new Error("Unexpected DOM: marked visible box disappeared");
-    log("round_observed", { boxes: await score(), boxCount, strategy });
-    const choice = await waitForChoicePhase(targetHandle, deadline);
-    if (choice.phase === "failed") { failed = true; break; }
-    if (choice.phase === "completed") { completed = true; break; }
-    if (choice.phase === "timeout") break;
-    log("real_box_click", { x: Math.round(choice.chosen.x), y: Math.round(choice.chosen.y) });
-    await choice.chosen.locator.click();
+    if (boxCount < 2 || boxCount > HARD_CAP) throw new Error(`Unexpected DOM: ${boxCount} boxes`);
+    log("round_observed", { boxes: currentScore, boxCount, strategy, requestedStrategy, targetId });
+
+    const phase = await waitForPickPhase(deadline);
+    if (phase === "failed") { failed = true; break; }
+    if (phase === "completed") { completed = true; break; }
+    if (phase === "timeout") break;
+
+    const target = page.locator(`button.box[data-id="${targetId}"]`);
+    if (await target.count() !== 1) throw new Error(`Target box ${targetId} not found after shuffle`);
+    log("privileged_identity_click", { targetId });
+    await target.click();
+
     const next = await waitAfterChoice(deadline);
     if (next === "failed") { failed = true; break; }
     if (next === "completed") { roundsCompleted += 1; completed = true; break; }
@@ -204,7 +151,7 @@ try {
     roundsCompleted += 1;
   }
 
-  const reachedBoxes = await score();
+  const reachedBoxes = Math.min(await score(), HARD_CAP);
   const wallReached = reachedBoxes >= 30;
   result = {
     attempt_id: attemptId,
@@ -215,6 +162,7 @@ try {
     failed,
     wall_reached: wallReached,
     completed,
+    cap_reached: capReached,
     recording_path: "",
     strategy,
     leaderboard_untouched: !leaderboardWriteAttempted && !selectedSaveRank,
