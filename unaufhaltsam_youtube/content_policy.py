@@ -6,10 +6,10 @@ from dataclasses import asdict, dataclass
 
 from .database import Database
 from .metadata import HUMAN_RECORD, WALL, result_hook
-from .models import RunResult
+from .models import BOT_HARD_CAP, RunResult
 from .performance import hook_type
 
-ALLOWED_FORMATS = {"FAILS", "THE_WALL", "SCORES", "GAMEPLAY", "SYSTEM_DATA"}
+ALLOWED_FORMATS = {"FAILS", "THE_WALL", "SCORES", "GAMEPLAY", "SYSTEM_DATA", "BOT_DEMO"}
 BANNED_PHRASES = {
     "motivation", "motivationscoach", "mindset coaching", "fake player",
     "fake gameplay", "eddie content", "eddie-content",
@@ -47,10 +47,16 @@ def decide_content(database: Database, run: RunResult) -> ContentDecision:
         ).fetchone()["average"]
     previous_best = int(previous["best"]) if previous["best"] is not None else -1
     new_best = run.reached_boxes > previous_best
-    hook = result_hook(run.reached_boxes, run.completed)
-    typed_hook = hook_type(run.reached_boxes, run.completed)
+    hook = result_hook(run.reached_boxes, run.completed, run.cap_reached)
+    typed_hook = hook_type(run.reached_boxes, run.completed and not run.cap_reached)
 
-    if run.completed or run.wall_reached:
+    if run.cap_reached:
+        content_format = "BOT_DEMO"
+        event = "bot_cap_reached"
+        title = f"UNAUFHALTSAM | Bot Demonstration Run ({run.reached_boxes}/{BOT_HARD_CAP})"
+        visualization = "capped_bot_gameplay"
+        fact = f"Automatisierter Bot-Run wurde bei {run.reached_boxes} Boxen sauber gedeckelt."
+    elif run.completed or run.wall_reached:
         content_format = "THE_WALL"
         event = "level_30_broken" if run.completed else "wall_reached"
         title = (
@@ -62,39 +68,33 @@ def decide_content(database: Database, run: RunResult) -> ContentDecision:
     elif new_best and previous_best >= 0:
         content_format = "SCORES"
         event = "new_bot_best"
-        title = f"Neuer Bot-Bestwert: {run.reached_boxes} echte Boxen"
+        title = f"UNAUFHALTSAM Bot Demo: {run.reached_boxes}/{BOT_HARD_CAP}"
         visualization = "score_first_gameplay"
         fact = f"Vorheriger Bot-Bestwert: {previous_best}; neuer Wert: {run.reached_boxes}."
     elif same_score >= 3:
         content_format = "SYSTEM_DATA"
         event = "repeated_failure_score"
-        title = f"System Data: {same_score} echte Fails bei {run.reached_boxes} Boxen"
+        title = f"System Data: {same_score} Bot-Runs bei {run.reached_boxes} Boxen"
         visualization = "telemetry_then_gameplay"
-        fact = f"SQLite enthält {same_score} reale Fehlversuche bei {run.reached_boxes} Boxen."
+        fact = f"SQLite enthält {same_score} Bot-Runs bei {run.reached_boxes} Boxen."
     elif average and run.duration_seconds > max(float(average) * 1.5, 60.0):
         content_format = "SYSTEM_DATA"
         event = "unusually_long_run"
         title = f"Ungewöhnlich langer Bot-Run: {run.duration_seconds:.1f} Sekunden"
         visualization = "duration_then_gameplay"
-        fact = f"Reale Laufzeit: {run.duration_seconds:.1f} Sekunden."
+        fact = f"Reale Laufzeit: {run.duration_seconds:.1f} Sekunden; Score {run.reached_boxes}."
     elif run.failed:
         content_format = "FAILS"
         event = "real_failed_attempt"
-        title = f"BOT FAILED bei {run.reached_boxes} Boxen – echter Versuch"
+        title = f"UNAUFHALTSAM Bot Demo endet bei {run.reached_boxes}/{BOT_HARD_CAP}"
         visualization = "failure_moment_gameplay"
-        fact = f"Der reale Run endete bei {run.reached_boxes} Boxen."
-    elif run.reached_boxes >= HUMAN_RECORD - 6:
-        content_format = "SCORES"
-        event = "high_score_near_record"
-        title = f"Bot-Score {run.reached_boxes} – Human Record {HUMAN_RECORD}"
-        visualization = "record_comparison_gameplay"
-        fact = f"Bot-Score: {run.reached_boxes}; Human Record: {HUMAN_RECORD}."
+        fact = f"Der reale Bot-Run endete bei {run.reached_boxes} Boxen."
     else:
         content_format = "GAMEPLAY"
         event = "raw_real_run"
-        title = f"Echter UNAUFHALTSAM Bot-Run: {run.reached_boxes} Boxen"
+        title = f"UNAUFHALTSAM Bot Demo: {run.reached_boxes}/{BOT_HARD_CAP}"
         visualization = "raw_gameplay_score_overlay"
-        fact = f"Unveränderter realer Bot-Run mit Score {run.reached_boxes}."
+        fact = f"Automatisierter Bot-Run mit Score {run.reached_boxes}."
 
     decision = ContentDecision(
         content_format, event, typed_hook, hook, title, visualization, fact, new_best
@@ -111,7 +111,7 @@ def validate_decision(run: RunResult, decision: ContentDecision) -> None:
         raise ValueError("Verbotener Content-Typ erkannt")
     if str(run.reached_boxes) not in f"{decision.title} {decision.supporting_fact}":
         raise ValueError("Content ist nicht mit dem echten Score belegt")
-    if decision.hook != result_hook(run.reached_boxes, run.completed):
+    if decision.hook != result_hook(run.reached_boxes, run.completed, run.cap_reached):
         raise ValueError("Hook widerspricht dem echten Run")
 
 
