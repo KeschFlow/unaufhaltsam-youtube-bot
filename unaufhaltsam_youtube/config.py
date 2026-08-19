@@ -55,7 +55,7 @@ class Config:
             cooldown_minutes=_integer("COOLDOWN_MINUTES", 30, 0),
             browser_retries=_integer("BROWSER_RETRIES", 2, 0),
             run_timeout_seconds=_integer("RUN_TIMEOUT_SECONDS", 180, 10),
-            strategy=os.environ.get("BOT_STRATEGY", "visual_dom_tracking"),
+            strategy=os.environ.get("BOT_STRATEGY", "privileged_dom_identity"),
             output_dir=output,
             db_file=Path(os.environ.get("AUTOPILOT_DB", DB_FILE)).resolve(),
             max_queue_size=_integer("MAX_QUEUE_SIZE", 50, 1),
