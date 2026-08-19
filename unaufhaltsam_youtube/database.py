@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS runs (
   attempt_id TEXT PRIMARY KEY, timestamp TEXT NOT NULL, reached_boxes INTEGER NOT NULL,
   rounds_completed INTEGER NOT NULL, duration_seconds REAL NOT NULL, failed INTEGER NOT NULL,
   wall_reached INTEGER NOT NULL, completed INTEGER NOT NULL, recording_path TEXT NOT NULL,
-  strategy TEXT NOT NULL, leaderboard_untouched INTEGER NOT NULL
+  strategy TEXT NOT NULL, leaderboard_untouched INTEGER NOT NULL, cap_reached INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS videos (
   id INTEGER PRIMARY KEY AUTOINCREMENT, attempt_id TEXT NOT NULL UNIQUE REFERENCES runs(attempt_id),
@@ -90,6 +90,11 @@ class Database:
             for name, declaration in PERFORMANCE_COLUMNS.items():
                 if name not in existing:
                     connection.execute(f"ALTER TABLE performance ADD COLUMN {name} {declaration}")
+            run_columns = {
+                row["name"] for row in connection.execute("PRAGMA table_info(runs)")
+            }
+            if "cap_reached" not in run_columns:
+                connection.execute("ALTER TABLE runs ADD COLUMN cap_reached INTEGER NOT NULL DEFAULT 0")
 
     @contextmanager
     def connection(self) -> Iterator[sqlite3.Connection]:
@@ -105,11 +110,13 @@ class Database:
     def add_run(self, run: RunResult) -> None:
         with self.connection() as db:
             db.execute(
-                "INSERT INTO runs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO runs(attempt_id,timestamp,reached_boxes,rounds_completed,duration_seconds,"
+                "failed,wall_reached,completed,recording_path,strategy,leaderboard_untouched,cap_reached) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     run.attempt_id, run.timestamp, run.reached_boxes, run.rounds_completed,
                     run.duration_seconds, run.failed, run.wall_reached, run.completed,
-                    run.recording_path, run.strategy, run.leaderboard_untouched,
+                    run.recording_path, run.strategy, run.leaderboard_untouched, run.cap_reached,
                 ),
             )
 
@@ -128,7 +135,7 @@ class Database:
             db.execute(
                 "INSERT INTO uploads(attempt_id,mode,status,youtube_video_id,uploaded_at,response_json) "
                 "VALUES(?,?,?,?,?,?) ON CONFLICT(attempt_id,mode) DO UPDATE SET "
-                "status=excluded.status,youtube_video_id=excluded.youtube_video_id," 
+                "status=excluded.status,youtube_video_id=excluded.youtube_video_id,"
                 "uploaded_at=excluded.uploaded_at,response_json=excluded.response_json",
                 (attempt_id, mode, status, video_id, now, json.dumps(response)),
             )
