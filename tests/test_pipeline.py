@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import subprocess
 import tempfile
 import unittest
@@ -222,7 +223,14 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(payload["status"], "below_threshold")
 
     def test_hard_cap_and_publish_window(self) -> None:
-        capped = replace(self.run, reached_boxes=15, rounds_completed=13, failed=False, cap_reached=True)
+        event_log = self.root / "events.jsonl"
+        event_log.write_text('{"type":"visible_hit"}\n', encoding="utf-8")
+        capped = replace(self.run, reached_boxes=15, rounds_completed=13, failed=False, cap_reached=True,
+                         strategy="visual_v1", fairness_passed=True, bot_version="AI-vs-THE-WALL-V1",
+                         evidence_path=str(event_log), evidence_sha256=hashlib.sha256(event_log.read_bytes()).hexdigest(),
+                         recording_sha256=hashlib.sha256(self.recording.read_bytes()).hexdigest(),
+                         runner_sha256=hashlib.sha256((Path(__file__).parents[1] / "unaufhaltsam_youtube" / "browser_runner.mjs").read_bytes()).hexdigest(),
+                         vision_sha256=hashlib.sha256((Path(__file__).parents[1] / "unaufhaltsam_youtube" / "screen_vision.py").read_bytes()).hexdigest())
         capped.validate()
         self.assertTrue(capped.is_publishable)
         self.assertFalse(replace(self.run, reached_boxes=9).is_publishable)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import hashlib
 
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
@@ -60,6 +61,14 @@ def publish(metadata: dict, mode: str, database: Database) -> dict:
     attempt_id = metadata.get("attempt_id", "unknown")
     try:
         validate_metadata(metadata)
+        if mode == "public":
+            fairness = metadata.get("fairness") or {}
+            if fairness.get("ruleset") != "AI-vs-THE-WALL-V1" or fairness.get("strategy") != "visual_v1":
+                raise PublishError("FAIRNESS_FAIL: nur visuell belegte V1-Runs duerfen hochgeladen werden")
+            for file_key, hash_key in (("recording_path", "recording_sha256"), ("event_log_path", "event_log_sha256")):
+                file = Path(fairness.get(file_key) or "")
+                if not file.is_file() or hashlib.sha256(file.read_bytes()).hexdigest() != fairness.get(hash_key):
+                    raise PublishError("FAIRNESS_FAIL: Videobeweis oder Eventlog-Hash ungueltig")
         if database.has_public_upload(attempt_id):
             raise PublishError(f"attempt_id {attempt_id} wurde bereits veroeffentlicht")
         video_path = Path(metadata["video_path"])

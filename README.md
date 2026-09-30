@@ -36,7 +36,7 @@ Alle Werte werden über Umgebungsvariablen gesetzt:
 | `COOLDOWN_MINUTES` | `30` | Pause zwischen zwei Runs |
 | `BROWSER_RETRIES` | `2` | Wiederholungen bei Browser-/Spielfehlern |
 | `RUN_TIMEOUT_SECONDS` | `180` | Maximale Dauer eines Runs |
-| `BOT_STRATEGY` | `visual_dom_tracking` | `visual_dom_tracking`, `visual_nearest_tracking` oder `visual_conservative_tracking` |
+| `BOT_STRATEGY` | `visual_v1` | Nur `visual_v1`; alte DOM-Identitätsstrategie wird abgewiesen |
 | `OUTPUT_DIR` | `output` | Ausgabeordner |
 | `AUTOPILOT_DB` | `output/autopilot.sqlite3` | SQLite-Datei |
 | `MAX_QUEUE_SIZE` | `50` | Maximale Anzahl unveröffentlichter Queue-Shorts |
@@ -66,6 +66,7 @@ Der verwendete OAuth-Scope ist ausschließlich `https://www.googleapis.com/auth/
 - Resultate: `output/recordings/*.json`
 - Metadaten: `output/metadata/`
 - Run-Logs: `output/logs/bot-runs.jsonl`
+- Fairness-Beweise: `output/recordings/<attempt>-evidence/events.jsonl` und Screenshot-Frames; SHA-256 für Log und Rohvideo im Run-Ergebnis
 - Scheduler-Log: `output/logs/scheduler.log`
 - persistente Queue: `output/queue/`
 - Datenbank und Systemereignisse: `output/autopilot.sqlite3`
@@ -77,6 +78,7 @@ Der verwendete OAuth-Scope ist ausschließlich `https://www.googleapis.com/auth/
 - Renderfehler: `imageio-ffmpeg` mit `pip install -r requirements.txt` reparieren und freien Speicher prüfen.
 - OAuth/API-Fehler: `secrets/client_secret.json`, Token und Google-Verifizierungsstatus prüfen; danach `auth authorize` erneut ausführen.
 - Guardrail-Ereignis: Worker nicht neu starten, bevor `system_events` geprüft wurde. Der Runner blockiert Firebase-Schreibrequests und klickt niemals `#saveScoreBtn`.
+- AI-vs-THE-WALL V1: Der Bot ermittelt Fokus, Boxpositionen und Tauschbewegungen aus Screenshots und klickt per Browser-Maus. Uneindeutige Wahrnehmung bricht den Versuch ab. DOM-IDs und interne Spiellogik sind gesperrt. Ohne vorhandenes Chromium, Tesseract, Playwright und einen echten aufgezeichneten Lauf ist das Live-Gate **FAIL**; bestandene Unit-Tests ersetzen keinen Run. Alte Queue-Metadaten ohne Eventlog-/Video-Hashes können nicht öffentlich hochgeladen werden.
 - Tests: `.\.venv\Scripts\python.exe -m unittest discover -s tests -v`
 
 ## Google-Verifizierungsdemo

@@ -63,6 +63,15 @@ def build_metadata(
         "wall": WALL,
         "video_path": str(video_path.resolve()),
     }
+    if run.fairness_passed:
+        metadata["fairness"] = {
+            "ruleset": run.bot_version, "strategy": run.strategy,
+            "recording_path": run.recording_path, "recording_sha256": run.recording_sha256,
+            "event_log_path": run.evidence_path, "event_log_sha256": run.evidence_sha256,
+            "game_url": run.game_url,
+            "browser_version": run.browser_version, "runtime_version": run.runtime_version,
+            "runner_sha256": run.runner_sha256, "vision_sha256": run.vision_sha256,
+        }
     if content_decision is not None:
         from .content_policy import apply_policy_to_metadata
         metadata = apply_policy_to_metadata(metadata, run, content_decision)
@@ -71,7 +80,7 @@ def build_metadata(
 
 def validate_metadata(metadata: dict) -> None:
     required = {"title", "description", "tags", "attempt_id", "score", "human_record", "wall", "video_path"}
-    if set(metadata) != required:
+    if not required.issubset(metadata) or set(metadata) - required - {"fairness"}:
         raise ValueError("Metadatenfelder sind ungueltig")
     if not metadata["title"] or len(metadata["title"]) > 100:
         raise ValueError("YouTube-Titel fehlt oder ist zu lang")

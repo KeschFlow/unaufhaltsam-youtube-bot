@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path
+import hashlib
 from typing import Any
 
 BOT_HARD_CAP = 15
@@ -21,9 +22,19 @@ class RunResult:
     wall_reached: bool
     completed: bool
     recording_path: str
-    strategy: str = "privileged_dom_identity"
+    strategy: str = "visual_v1"
     leaderboard_untouched: bool = True
     cap_reached: bool = False
+    fairness_passed: bool = False
+    evidence_path: str = ""
+    evidence_sha256: str = ""
+    recording_sha256: str = ""
+    game_url: str = ""
+    bot_version: str = ""
+    browser_version: str = ""
+    runtime_version: str = ""
+    runner_sha256: str = ""
+    vision_sha256: str = ""
 
     @property
     def is_publishable(self) -> bool:
@@ -53,3 +64,14 @@ class RunResult:
             raise ValueError("Run-Aufzeichnung fehlt oder Dauer ist ungueltig")
         if not self.leaderboard_untouched:
             raise ValueError("Leaderboard-Guardrail wurde ausgeloest")
+        if self.strategy != "visual_v1" or not self.fairness_passed or self.bot_version != "AI-vs-THE-WALL-V1":
+            raise ValueError("FAIRNESS_FAIL: kein attestierter visueller V1-Lauf")
+        for filename, expected in ((self.recording_path, self.recording_sha256), (self.evidence_path, self.evidence_sha256)):
+            if not filename or not Path(filename).is_file() or len(expected) != 64:
+                raise ValueError("FAIRNESS_FAIL: Video oder Eventlog fehlt")
+            if hashlib.sha256(Path(filename).read_bytes()).hexdigest() != expected:
+                raise ValueError("FAIRNESS_FAIL: Beweis-Hash stimmt nicht")
+        for filename, expected in ((Path(__file__).with_name("browser_runner.mjs"), self.runner_sha256),
+                                   (Path(__file__).with_name("screen_vision.py"), self.vision_sha256)):
+            if len(expected) != 64 or hashlib.sha256(filename.read_bytes()).hexdigest() != expected:
+                raise ValueError("FAIRNESS_FAIL: Runner-Version stimmt nicht")
