@@ -1,12 +1,15 @@
 $ErrorActionPreference = "Stop"
 
 $taskName = "UNAUFHALTSAM YouTube Autopilot"
-$projectRoot = "C:\Users\kesch\unaufhaltsam-youtube-bot"
+$projectRoot = $PSScriptRoot
 $pythonExe = Join-Path $projectRoot ".venv\Scripts\python.exe"
 $runner = Join-Path $projectRoot "scheduled_entry.py"
 
 if (-not (Test-Path -LiteralPath $runner -PathType Leaf)) {
     throw "Scheduler-Runner fehlt: $runner"
+}
+if (-not (Test-Path -LiteralPath $pythonExe -PathType Leaf)) {
+    throw "Python-Umgebung fehlt: $pythonExe"
 }
 
 $action = New-ScheduledTaskAction `
@@ -35,5 +38,5 @@ Register-ScheduledTask `
     -Trigger @($dailyTrigger, $startupTrigger) `
     -Settings $settings `
     -Principal $principal `
-    -Description "Taeglicher begrenzter UNAUFHALTSAM YouTube Autopilot im sicheren Dry-Run-Modus." `
+    -Description "Taeglicher begrenzter UNAUFHALTSAM YouTube Autopilot im persistent konfigurierten Publish-Modus." `
     -Force
