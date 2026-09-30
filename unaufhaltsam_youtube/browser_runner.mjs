@@ -5,6 +5,7 @@ import path from "node:path";
 import process from "node:process";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 
 const args = Object.fromEntries(process.argv.slice(2).map((arg) => {
@@ -19,7 +20,8 @@ if (!attemptId || !outputDir || !gameUrl || strategy !== "visual_v1") {
 }
 const HARD_CAP = 15;
 const root = path.resolve(outputDir);
-const observer = path.join(path.dirname(new URL(import.meta.url).pathname), "screen_vision.py");
+const runnerPath = fileURLToPath(import.meta.url);
+const observer = path.join(path.dirname(runnerPath), "screen_vision.py");
 fs.mkdirSync(root, { recursive: true });
 const evidenceDir = path.join(root, `${attemptId}-evidence`);
 fs.mkdirSync(evidenceDir, { recursive: true });
@@ -166,7 +168,7 @@ try {
     fairness_passed: !leaderboardWriteAttempted, evidence_path: "", evidence_sha256: "", recording_sha256: "",
     game_url: page.url(), bot_version: "AI-vs-THE-WALL-V1",
     browser_version: browser.version(), runtime_version: process.version,
-    runner_sha256: sha(fs.readFileSync(new URL(import.meta.url))),
+    runner_sha256: sha(fs.readFileSync(runnerPath)),
     vision_sha256: sha(fs.readFileSync(observer)),
   };
 } finally {
