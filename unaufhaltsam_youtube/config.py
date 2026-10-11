@@ -42,6 +42,9 @@ class Config:
         mode = os.environ.get("PUBLISH_MODE", read_runtime()["publish_mode"]).lower()
         if mode not in {"dry_run", "public"}:
             raise ValueError("PUBLISH_MODE muss dry_run oder public sein")
+        strategy = os.environ.get("BOT_STRATEGY", "visual_v1")
+        if strategy != "visual_v1":
+            raise ValueError("FAIRNESS_FAIL: Nur visual_v1 ist zugelassen")
         output = Path(os.environ.get("OUTPUT_DIR", OUTPUT_DIR)).resolve()
         return cls(
             game_url=os.environ.get(
@@ -55,7 +58,7 @@ class Config:
             cooldown_minutes=_integer("COOLDOWN_MINUTES", 30, 0),
             browser_retries=_integer("BROWSER_RETRIES", 2, 0),
             run_timeout_seconds=_integer("RUN_TIMEOUT_SECONDS", 180, 10),
-            strategy=os.environ.get("BOT_STRATEGY", "privileged_dom_identity"),
+            strategy=strategy,
             output_dir=output,
             db_file=Path(os.environ.get("AUTOPILOT_DB", DB_FILE)).resolve(),
             max_queue_size=_integer("MAX_QUEUE_SIZE", 50, 1),

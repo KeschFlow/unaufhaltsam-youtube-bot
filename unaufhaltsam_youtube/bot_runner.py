@@ -15,6 +15,8 @@ class BrowserGameError(RuntimeError):
 
 
 def run_bot(config: Config, attempt_id: str) -> RunResult:
+    if config.strategy != "visual_v1":
+        raise BrowserGameError("FAIRNESS_FAIL: DOM-Identitaetsstrategie gesperrt")
     recordings = config.output_dir / "recordings"
     recordings.mkdir(parents=True, exist_ok=True)
     script = Path(__file__).with_name("browser_runner.mjs")
