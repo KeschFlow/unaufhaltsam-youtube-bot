@@ -23,6 +23,10 @@ Den begrenzten Tagesworker starten:
 .\.venv\Scripts\python.exe autopilot.py
 ```
 
+Der Bot spielt ausschließlich visuell: Screenshots sehen, Bewegungen daraus verfolgen und per Browser-Maus klicken. DOM-Identität, interne Spielzustände und versteckte Daten sind nicht zugelassen. Der Run endet bei sichtbarem Scheitern oder beim Erreichen von THE WALL (30).
+
+Pro Tag wird höchstens ein Short veröffentlicht. Vorrang haben THE WALL bzw. ein neuer Bot-Rekord; ansonsten wird der stärkste echte Tages-Run ausgewählt. Nicht ausgewählte Versuche bleiben für Fail-/Lern-Auswertung erhalten.
+
 ## Konfiguration
 
 Alle Werte werden über Umgebungsvariablen gesetzt:
@@ -32,11 +36,11 @@ Alle Werte werden über Umgebungsvariablen gesetzt:
 | `PUBLISH_MODE` | `dry_run` | `dry_run` oder `public` |
 | `MAX_RUNS_PER_DAY` | `20` | Maximale echte Spielversuche pro UTC-Tag |
 | `MAX_UPLOADS_PER_DAY` | `1` | Maximale Publisher-Vorgänge pro UTC-Tag |
-| `MINIMUM_PUBLISH_SCORE` | `10` | Mindestscore für Render und Publisher |
+| `MINIMUM_PUBLISH_SCORE` | `0` | Optionaler Mindestscore für die Tagesauswahl |
 | `COOLDOWN_MINUTES` | `30` | Pause zwischen zwei Runs |
 | `BROWSER_RETRIES` | `2` | Wiederholungen bei Browser-/Spielfehlern |
 | `RUN_TIMEOUT_SECONDS` | `180` | Maximale Dauer eines Runs |
-| `BOT_STRATEGY` | `visual_v1` | Nur `visual_v1`; alte DOM-Identitätsstrategie wird abgewiesen |
+| `BOT_STRATEGY` | `visual_v1` | Nur `visual_v1`; DOM-Identitätsstrategien werden abgewiesen |
 | `OUTPUT_DIR` | `output` | Ausgabeordner |
 | `AUTOPILOT_DB` | `output/autopilot.sqlite3` | SQLite-Datei |
 | `MAX_QUEUE_SIZE` | `50` | Maximale Anzahl unveröffentlichter Queue-Shorts |
@@ -73,11 +77,10 @@ Der verwendete OAuth-Scope ist ausschließlich `https://www.googleapis.com/auth/
 
 ## Fehlerbehebung
 
-- `Unexpected DOM`: Das veröffentlichte Spiel hat seine Struktur geändert; Selektoren prüfen, bevor der Worker erneut startet.
 - Browser fehlt: `npx playwright install chromium` erneut ausführen.
 - Renderfehler: `imageio-ffmpeg` mit `pip install -r requirements.txt` reparieren und freien Speicher prüfen.
 - OAuth/API-Fehler: `secrets/client_secret.json`, Token und Google-Verifizierungsstatus prüfen; danach `auth authorize` erneut ausführen.
-- Guardrail-Ereignis: Worker nicht neu starten, bevor `system_events` geprüft wurde. Der Runner blockiert Firebase-Schreibrequests und klickt niemals `#saveScoreBtn`.
+- Guardrail-Ereignis: Worker nicht neu starten, bevor `system_events` geprüft wurde. Der Runner blockiert Firebase-Schreibrequests.
 - AI-vs-THE-WALL V1: Der Bot ermittelt Fokus, Boxpositionen und Tauschbewegungen aus Screenshots und klickt per Browser-Maus. Uneindeutige Wahrnehmung bricht den Versuch ab. DOM-IDs und interne Spiellogik sind gesperrt. Ohne vorhandenes Chromium, Tesseract, Playwright und einen echten aufgezeichneten Lauf ist das Live-Gate **FAIL**; bestandene Unit-Tests ersetzen keinen Run. Alte Queue-Metadaten ohne Eventlog-/Video-Hashes können nicht öffentlich hochgeladen werden.
 - Tests: `.\.venv\Scripts\python.exe -m unittest discover -s tests -v`
 
