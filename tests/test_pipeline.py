@@ -51,7 +51,7 @@ class PipelineTests(unittest.TestCase):
 
     def test_result_hooks_are_truthful(self) -> None:
         self.assertIn("HUMAN RECORD REMAINS SEPARATE", result_hook(10))
-        self.assertEqual(result_hook(15, cap_reached=True), "BOT RUN CAP REACHED AT 15.")
+        self.assertEqual(result_hook(30, cap_reached=True), "BOT RUN REACHED THE WALL AT 30.")
         self.assertEqual(result_hook(30, True), "LEVEL 30 BROKEN.")
 
     def test_sqlite_schema_and_duplicate_run_guard(self) -> None:
@@ -177,7 +177,7 @@ class PipelineTests(unittest.TestCase):
         low = self.run
         high = RunResult(
             attempt_id="attempt-high", timestamp=datetime.now(UTC).isoformat(),
-            reached_boxes=15, rounds_completed=13, duration_seconds=30,
+            reached_boxes=18, rounds_completed=16, duration_seconds=30,
             failed=True, wall_reached=False, completed=False,
             recording_path=str(self.recording), leaderboard_untouched=True,
         )
@@ -225,30 +225,49 @@ class PipelineTests(unittest.TestCase):
     def test_hard_cap_and_publish_window(self) -> None:
         event_log = self.root / "events.jsonl"
         event_log.write_text('{"type":"visible_hit"}\n', encoding="utf-8")
-        capped = replace(self.run, reached_boxes=15, rounds_completed=13, failed=False, cap_reached=True,
-                         strategy="visual_v1", fairness_passed=True, bot_version="AI-vs-THE-WALL-V1",
-                         evidence_path=str(event_log), evidence_sha256=hashlib.sha256(event_log.read_bytes()).hexdigest(),
-                         recording_sha256=hashlib.sha256(self.recording.read_bytes()).hexdigest(),
-                         runner_sha256=hashlib.sha256((Path(__file__).parents[1] / "unaufhaltsam_youtube" / "browser_runner.mjs").read_bytes()).hexdigest(),
-                         vision_sha256=hashlib.sha256((Path(__file__).parents[1] / "unaufhaltsam_youtube" / "screen_vision.py").read_bytes()).hexdigest())
+        capped = replace(
+            self.run,
+            reached_boxes=30,
+            rounds_completed=28,
+            failed=False,
+            wall_reached=True,
+            completed=True,
+            cap_reached=True,
+            strategy="visual_v1",
+            fairness_passed=True,
+            bot_version="AI-vs-THE-WALL-V1",
+            evidence_path=str(event_log),
+            evidence_sha256=hashlib.sha256(event_log.read_bytes()).hexdigest(),
+            recording_sha256=hashlib.sha256(self.recording.read_bytes()).hexdigest(),
+            runner_sha256=hashlib.sha256(
+                (Path(__file__).parents[1] / "unaufhaltsam_youtube" / "browser_runner.mjs").read_bytes()
+            ).hexdigest(),
+            vision_sha256=hashlib.sha256(
+                (Path(__file__).parents[1] / "unaufhaltsam_youtube" / "screen_vision.py").read_bytes()
+            ).hexdigest(),
+        )
         capped.validate()
         self.assertTrue(capped.is_publishable)
-        self.assertFalse(replace(self.run, reached_boxes=9).is_publishable)
+        self.assertTrue(replace(self.run, reached_boxes=16).is_publishable)
         with self.assertRaises(ValueError):
-            replace(self.run, reached_boxes=16).validate()
+            replace(capped, reached_boxes=31, cap_reached=False).validate()
 
-    def test_renderer_blocks_outside_publish_window(self) -> None:
+    def test_renderer_accepts_scores_through_30_and_blocks_above_wall(self) -> None:
         from unaufhaltsam_youtube.renderer import RenderError
+
+        mid = render_short(replace(self.run, reached_boxes=16), 1, self.root / "mid.mp4")
+        self.assertGreater(mid.stat().st_size, 0)
         with self.assertRaises(RenderError):
-            render_short(replace(self.run, reached_boxes=9), 1, self.root / "low.mp4")
-        with self.assertRaises(RenderError):
-            render_short(replace(self.run, reached_boxes=16), 1, self.root / "high.mp4")
+            render_short(replace(self.run, reached_boxes=31), 1, self.root / "too-high.mp4")
 
     def test_content_policy_uses_real_run_and_blocks_forbidden_format(self) -> None:
         db = Database(self.root / "test.sqlite3")
         db.add_run(self.run)
         decision = decide_content(db, self.run)
-        self.assertIn(decision.content_format, {"FAILS", "SCORES", "GAMEPLAY", "SYSTEM_DATA", "THE_WALL"})
+        self.assertIn(
+            decision.content_format,
+            {"FAILS", "SCORES", "GAMEPLAY", "SYSTEM_DATA", "THE_WALL", "BOT_DEMO"},
+        )
         self.assertIn(str(self.run.reached_boxes), decision.supporting_fact)
         forbidden = ContentDecision(
             "MOTIVATION", "generic", decision.hook_type, decision.hook,
