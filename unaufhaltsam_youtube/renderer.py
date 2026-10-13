@@ -1,4 +1,4 @@
-"""FFmpeg-based vertical Shorts renderer for transparent capped bot runs."""
+"""FFmpeg-based vertical Shorts renderer for transparent visual bot runs."""
 
 from __future__ import annotations
 
@@ -38,7 +38,7 @@ def _overlay(
     image = Image.new("RGBA", (1080, 1920), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
     draw.rounded_rectangle((48, 42, 1032, 305), radius=30, fill=(8, 8, 13, 218), outline=(160, 75, 255, 255), width=5)
-    _center(draw, "BOT RUN · CAP 15", 66, _font(52, True), "#d69cff")
+    _center(draw, "BOT RUN · VISUAL ONLY", 66, _font(52, True), "#d69cff")
     _center(draw, f"ATTEMPT #{attempt_number}", 132, _font(34, True))
     _center(draw, f"BOT SCORE: {run.reached_boxes} / {BOT_HARD_CAP}", 190, _font(54, True))
     _center(draw, f"HUMAN RECORD: {HUMAN_RECORD}   |   WALL: {WALL}", 258, _font(28, True))
@@ -50,7 +50,7 @@ def _overlay(
     lines = hook.replace(". ", ".\n").splitlines()
     for index, line in enumerate(lines[:2]):
         _center(draw, line, 1610 + index * 58, _font(38, True), "#ffd34d")
-    _center(draw, "AUTOMATED DEMONSTRATION RUN", 1732, _font(32, True))
+    _center(draw, "AUTOMATED VISUAL-ONLY RUN", 1732, _font(32, True))
     _center(draw, "PLAY UNAUFHALTSAM", 1780, _font(40, True))
     _center(draw, "eddiesworld.de/unaufhaltsam/", 1832, _font(28))
     image.save(path)
