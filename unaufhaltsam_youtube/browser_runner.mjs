@@ -18,7 +18,7 @@ const strategy = args.strategy || "visual_v1";
 if (!attemptId || !outputDir || !gameUrl || strategy !== "visual_v1") {
   throw new Error("FAIRNESS_FAIL: visual_v1 is the only permitted strategy");
 }
-const HARD_CAP = 15;
+const HARD_CAP = 30;
 const root = path.resolve(outputDir);
 const runnerPath = fileURLToPath(import.meta.url);
 const observer = path.join(path.dirname(runnerPath), "screen_vision.py");
@@ -126,7 +126,6 @@ try {
   page.on("dialog", dialog => dialog.dismiss());
   await page.goto(gameUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
   event("game_opened", { url: page.url(), strategy });
-  // These are public UI controls. Game state and box identity are never read via DOM.
   const deny = page.getByRole("button", { name: "NUR NOTWENDIGE" });
   if (await deny.isVisible()) await deny.click();
   await screenshot("before-start");
@@ -135,9 +134,10 @@ try {
   let roundsCompleted = 0;
   let failed = false;
   let capReached = false;
+  let wallReached = false;
+  let completed = false;
   const deadline = started + timeoutSeconds * 1000;
-  while (Date.now() < deadline && roundsCompleted + 2 <= HARD_CAP) {
-    if (roundsCompleted + 2 === HARD_CAP) { capReached = true; break; }
+  while (Date.now() < deadline && roundsCompleted + 2 < HARD_CAP) {
     await playRound(roundsCompleted, deadline);
     let terminal = false;
     for (let wait = 0; wait < 30 && Date.now() < deadline; wait++) {
@@ -148,22 +148,29 @@ try {
       if (/HIT.*CONTINUE/.test(words)) {
         roundsCompleted++;
         event("visible_hit", { roundsCompleted, frame_sha256: sha(fs.readFileSync(file)) });
-        await page.waitForTimeout(760);
+        if (roundsCompleted + 2 >= HARD_CAP) {
+          capReached = true;
+          wallReached = true;
+          completed = true;
+          event("wall_reached", { reachedBoxes: HARD_CAP });
+        } else {
+          await page.waitForTimeout(760);
+        }
         terminal = true;
         break;
       }
     }
     if (!terminal) throw new Error("FAIRNESS_FAIL: result cannot be read from video frames");
-    if (failed) break;
+    if (failed || completed) break;
   }
-  if (!failed && !capReached) throw new Error("FAIRNESS_FAIL: timed out before a visible result");
+  if (!failed && !completed) throw new Error("FAIRNESS_FAIL: timed out before a visible result");
   const reachedBoxes = roundsCompleted + 2;
   const finalFrame = await screenshot("final");
-  event("run_result", { reachedBoxes, failed, capReached, final_frame_sha256: sha(fs.readFileSync(finalFrame)) });
+  event("run_result", { reachedBoxes, failed, wallReached, completed, capReached, final_frame_sha256: sha(fs.readFileSync(finalFrame)) });
   result = {
     attempt_id: attemptId, timestamp: new Date(started).toISOString(), reached_boxes: reachedBoxes,
     rounds_completed: roundsCompleted, duration_seconds: Math.round((Date.now() - started) / 10) / 100,
-    failed, wall_reached: false, completed: false, cap_reached: capReached,
+    failed, wall_reached: wallReached, completed, cap_reached: capReached,
     recording_path: "", strategy, leaderboard_untouched: !leaderboardWriteAttempted,
     fairness_passed: !leaderboardWriteAttempted, evidence_path: "", evidence_sha256: "", recording_sha256: "",
     game_url: page.url(), bot_version: "AI-vs-THE-WALL-V1",
