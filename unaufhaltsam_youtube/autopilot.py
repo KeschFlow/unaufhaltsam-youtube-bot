@@ -7,6 +7,7 @@ import json
 import sys
 import time
 import uuid
+from pathlib import Path
 
 from .bot_runner import BrowserGameError, run_bot
 from .config import Config
@@ -42,14 +43,17 @@ def execute_once(config: Config, database: Database) -> dict:
     if run is None:
         database.event("CRITICAL", "browser_game_failure", str(last_error), attempt_id)
         raise BrowserGameError(str(last_error))
+
     database.add_run(run)
     database.event("INFO", "run_completed", "Echter Bot-Run gespeichert", attempt_id, run.as_dict())
     if not run.leaderboard_untouched:
         database.event("CRITICAL", "leaderboard_guardrail", "Leaderboard-Schreibversuch", attempt_id)
         raise BrowserGameError("Leaderboard-Guardrail ausgeloest")
+
     summary = {"run": run.as_dict(), "published": False}
     if run.reached_boxes > BOT_HARD_CAP:
         raise ValueError(f"HARD CAP VIOLATION: {run.reached_boxes} > {BOT_HARD_CAP}")
+
     eligible = (
         run.is_publishable
         and run.reached_boxes >= max(config.minimum_publish_score, BOT_MIN_PUBLISH_SCORE)
@@ -62,8 +66,10 @@ def execute_once(config: Config, database: Database) -> dict:
             attempt_id, run.as_dict(),
         )
         return summary
+
     if run.completed and not run.cap_reached:
         database.event("CRITICAL", "system_alert", "LEVEL 30 BROKEN", attempt_id, run.as_dict())
+
     selected_hook = hook_type(run.reached_boxes, run.completed and not run.cap_reached)
     title_variant, overlay_variant = recommend_variants(database, selected_hook)
     content_decision = decide_content(database, run)
@@ -80,33 +86,68 @@ def execute_once(config: Config, database: Database) -> dict:
     database.add_video(attempt_id, video_path, metadata_path)
     queue_path = write_queue_item(
         config.output_dir, attempt_id, run.reached_boxes, eligible, video_path, metadata_path,
-        config.publish_mode, "ready" if eligible else "below_threshold", content={
+        config.publish_mode, "candidate", content={
             "content_format": content_decision.content_format,
             "content_event": content_decision.event,
             "content_hook": content_decision.hook,
             "visualization": content_decision.visualization,
             "content_policy_passed": True,
+            "new_bot_best": content_decision.new_bot_best,
         },
     )
     summary.update({
-        "video_path": str(video_path), "metadata_path": str(metadata_path),
-        "queue_path": str(queue_path), "eligible": eligible,
+        "video_path": str(video_path),
+        "metadata_path": str(metadata_path),
+        "queue_path": str(queue_path),
+        "eligible": eligible,
+        "content_event": content_decision.event,
+        "new_bot_best": content_decision.new_bot_best,
     })
+    return summary
+
+
+def _candidate_priority(summary: dict) -> tuple[int, int]:
+    """Prefer wall/record runs; otherwise use the best genuine run of the day."""
+    run = summary["run"]
+    event = summary.get("content_event")
+    if run.get("completed") or run.get("wall_reached"):
+        tier = 4
+    elif summary.get("new_bot_best"):
+        tier = 3
+    elif event == "repeated_failure_score":
+        tier = 2
+    else:
+        tier = 1
+    return tier, int(run.get("reached_boxes", 0))
+
+
+def _publish_daily_candidate(config: Config, database: Database, results: list[dict]) -> None:
+    """Publish at most one real Short: the strongest truthful candidate generated today."""
+    candidates = [item for item in results if item.get("eligible") and item.get("metadata_path")]
+    if not candidates:
+        return
     if database.count_public_uploads_today() >= config.max_uploads_per_day:
-        database.event("INFO", "daily_upload_limit", "Upload-Tageslimit erreicht", attempt_id)
-        update_queue_item(queue_path, {"status": "daily_limit"})
-        return summary
+        for item in candidates:
+            update_queue_item(Path(item["queue_path"]), {"status": "daily_limit"})
+        return
+
+    selected = max(candidates, key=_candidate_priority)
+    for item in candidates:
+        if item is not selected:
+            update_queue_item(Path(item["queue_path"]), {"status": "held_for_fail_pool"})
+
+    metadata = json.loads(Path(selected["metadata_path"]).read_text(encoding="utf-8"))
     response = publish(metadata, config.publish_mode, database)
-    update_queue_item(queue_path, {
+    update_queue_item(Path(selected["queue_path"]), {
         "status": "dry_run_validated" if config.publish_mode == "dry_run" else "published",
         "publisher": response,
+        "daily_selection": "wall_or_record_first_then_best_real_run",
     })
-    summary.update({
+    selected.update({
         "published": config.publish_mode == "public",
         "publisher_validated": True,
         "publisher": response,
     })
-    return summary
 
 
 def run_worker(config: Config, once: bool = False) -> list[dict]:
@@ -132,6 +173,8 @@ def run_worker(config: Config, once: bool = False) -> list[dict]:
             raise
         if index + 1 < remaining and config.cooldown_minutes:
             time.sleep(config.cooldown_minutes * 60)
+
+    _publish_daily_candidate(config, database, results)
     return results
 
 
