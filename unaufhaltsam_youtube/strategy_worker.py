@@ -12,7 +12,7 @@ from pathlib import Path
 from .config import Config
 from .content_policy import decide_content
 from .database import Database
-from .models import RunResult
+from .models import BOT_HARD_CAP, BOT_MIN_PUBLISH_SCORE, RunResult
 from .performance import hook_type, queue_priority
 from .queue import read_queue, update_queue_item
 
@@ -88,7 +88,10 @@ def rank_queue(config: Config, database: Database) -> list[RankedCandidate]:
         if row is None:
             raise ValueError(f"Queue-Run fehlt in SQLite: {attempt_id}")
         score = int(row["reached_boxes"])
-        eligible = 10 <= score <= 15 and score >= config.minimum_publish_score
+        eligible = (
+            BOT_MIN_PUBLISH_SCORE <= score <= BOT_HARD_CAP
+            and score >= config.minimum_publish_score
+        )
         if payload.get("eligible") != eligible:
             update_queue_item(path, {"eligible": eligible})
         if config.publish_mode == "public" and not eligible:
