@@ -9,11 +9,11 @@ import time
 import uuid
 from pathlib import Path
 
+from .analytics_worker import run_analytics
 from .bot_runner import BrowserGameError, run_bot
 from .config import Config
 from .content_policy import decide_content, validate_policy_output
 from .database import Database
-from .daily_loop import run_daily_performance_loop
 from .metadata import build_metadata, write_metadata
 from .instance_lock import AutopilotAlreadyRunning, autopilot_lock
 from .performance import hook_type
@@ -152,7 +152,9 @@ def _publish_daily_candidate(config: Config, database: Database, results: list[d
 
 def run_worker(config: Config, once: bool = False) -> list[dict]:
     database = Database(config.db_file)
-    run_daily_performance_loop(config, database)
+    # Refresh performance data, but do not consume today's upload slot before
+    # today's runs have been generated and compared with each other.
+    run_analytics(config, database)
     results: list[dict] = []
     remaining = max(0, config.max_runs_per_day - database.count_today("runs"))
     if once:
