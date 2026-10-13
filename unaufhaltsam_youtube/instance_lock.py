@@ -1,15 +1,50 @@
-"""Windows process lock shared by scheduler, CLI, healthcheck, and live switch."""
+"""Cross-platform process lock shared by scheduler, CLI, healthcheck, and live switch."""
 
 from __future__ import annotations
 
 import contextlib
-import msvcrt
+import os
 from pathlib import Path
 from typing import Iterator
+
+if os.name == "nt":
+    import msvcrt
+else:
+    import fcntl
 
 
 class AutopilotAlreadyRunning(RuntimeError):
     pass
+
+
+def _try_lock(handle) -> None:
+    if os.name == "nt":
+        handle.seek(0)
+        try:
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+        except OSError as exc:
+            raise AutopilotAlreadyRunning("Eine Autopilot-Instanz laeuft bereits") from exc
+        return
+
+    try:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError as exc:
+        raise AutopilotAlreadyRunning("Eine Autopilot-Instanz laeuft bereits") from exc
+
+
+def _unlock(handle) -> None:
+    if os.name == "nt":
+        handle.seek(0)
+        try:
+            msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+        except OSError:
+            pass
+        return
+
+    try:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    except OSError:
+        pass
 
 
 @contextlib.contextmanager
@@ -22,20 +57,12 @@ def autopilot_lock(output_dir: Path) -> Iterator[None]:
         if path.stat().st_size == 0:
             handle.write(b"0")
             handle.flush()
-        handle.seek(0)
-        try:
-            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
-            locked = True
-        except OSError as exc:
-            raise AutopilotAlreadyRunning("Eine Autopilot-Instanz laeuft bereits") from exc
+        _try_lock(handle)
+        locked = True
         yield
     finally:
         if locked:
-            handle.seek(0)
-            try:
-                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
-            except OSError:
-                pass
+            _unlock(handle)
         handle.close()
 
 
