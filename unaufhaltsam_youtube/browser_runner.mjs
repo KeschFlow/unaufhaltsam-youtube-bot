@@ -129,7 +129,18 @@ try {
   const deny = page.getByRole("button", { name: "NUR NOTWENDIGE" });
   if (await deny.isVisible()) await deny.click();
   await screenshot("before-start");
-  await page.getByRole("button", { name: "START", exact: true }).click();
+  // START is setup, not a gameplay target. Prefer the semantic role, but fall back
+  // to the same visible label because the deployed game may render START without
+  // an accessible button role. Gameplay itself remains screenshot-only.
+  const startByRole = page.getByRole("button", { name: "START", exact: true });
+  try {
+    await startByRole.click({ timeout: 5000 });
+    event("start_clicked", { method: "role" });
+  } catch {
+    const startByText = page.getByText("START", { exact: true }).first();
+    await startByText.click({ timeout: 5000 });
+    event("start_clicked", { method: "visible_text_fallback" });
+  }
   await page.waitForTimeout(200);
   let roundsCompleted = 0;
   let failed = false;
