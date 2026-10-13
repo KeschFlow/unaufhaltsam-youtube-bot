@@ -1,4 +1,4 @@
-"""Transparent YouTube metadata for capped bot demonstration runs."""
+"""Transparent YouTube metadata for visual-only bot runs."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ WALL = 30
 
 def result_hook(score: int, completed: bool = False, cap_reached: bool = False) -> str:
     if cap_reached:
-        return f"BOT RUN CAP REACHED AT {BOT_HARD_CAP}."
+        return f"BOT RUN REACHED THE WALL AT {BOT_HARD_CAP}."
     if completed:
         return "LEVEL 30 BROKEN."
     if score < HUMAN_RECORD:
@@ -28,14 +28,14 @@ def result_hook(score: int, completed: bool = False, cap_reached: bool = False) 
 def title_for(run: RunResult, variant: str = "result_first") -> str:
     score = run.reached_boxes
     if run.cap_reached:
-        return f"UNAUFHALTSAM | Bot Demonstration Run ({score}/{BOT_HARD_CAP})"
+        return f"UNAUFHALTSAM | THE WALL reached ({score}/{BOT_HARD_CAP})"
     if variant == "score_first":
-        return f"UNAUFHALTSAM | Bot Demonstration Run ({score}/{BOT_HARD_CAP})"
+        return f"UNAUFHALTSAM | Bot Run ({score}/{BOT_HARD_CAP})"
     if variant == "duel_first":
-        return f"UNAUFHALTSAM Bot Demo: {score}/{BOT_HARD_CAP}"
+        return f"UNAUFHALTSAM Bot vs THE WALL: {score}/{BOT_HARD_CAP}"
     if variant != "result_first":
         raise ValueError(f"Unbekannte Titelvariante: {variant}")
-    return f"UNAUFHALTSAM | Bot Demonstration Run ({score}/{BOT_HARD_CAP})"
+    return f"UNAUFHALTSAM | Bot Run ({score}/{BOT_HARD_CAP})"
 
 
 def build_metadata(
@@ -43,20 +43,21 @@ def build_metadata(
     title_variant: str = "result_first", content_decision=None,
 ) -> dict:
     hook = result_hook(run.reached_boxes, run.completed, run.cap_reached)
-    cap_status = "CAP REACHED" if run.cap_reached else "CAP NOT REACHED"
+    wall_status = "THE WALL REACHED" if run.cap_reached or run.wall_reached else "RUN ENDED"
     description = (
         f"BOT RUN #{attempt_number}\n"
         f"BOT SCORE: {run.reached_boxes}\n"
-        f"BOT CAP: {BOT_HARD_CAP}\n"
-        f"STATUS: {cap_status}\n\n{hook}\n\n"
-        "Automated system demonstration run. Bot execution is capped at 15. "
-        f"Human record ({HUMAN_RECORD}) and Wall ({WALL}) are separate human-game metrics.\n\n"
+        f"THE WALL: {WALL}\n"
+        f"STATUS: {wall_status}\n\n{hook}\n\n"
+        "Visual-only automated run: screenshot perception and browser mouse only; "
+        "no DOM identity or hidden game state. "
+        f"Human record ({HUMAN_RECORD}) and Wall ({WALL}) remain separate human-game metrics.\n\n"
         "PLAY UNAUFHALTSAM\nhttps://eddiesworld.de/unaufhaltsam/"
     )
     metadata = {
         "title": title_for(run, title_variant),
         "description": description,
-        "tags": ["UNAUFHALTSAM", "BotRun", "FocusGame", "AutomationTest"],
+        "tags": ["UNAUFHALTSAM", "BotRun", "FocusGame", "VisualAI", "YouTubeShorts"],
         "attempt_id": run.attempt_id,
         "score": run.reached_boxes,
         "human_record": HUMAN_RECORD,
@@ -89,7 +90,10 @@ def validate_metadata(metadata: dict) -> None:
     if metadata["human_record"] != HUMAN_RECORD or metadata["wall"] != WALL:
         raise ValueError("Rekord- oder Wall-Wert ist ungueltig")
     if not BOT_MIN_PUBLISH_SCORE <= int(metadata["score"]) <= BOT_HARD_CAP:
-        raise ValueError("Bot-Score liegt ausserhalb des Publish-Fensters 10-15")
+        raise ValueError(
+            f"Bot-Score liegt ausserhalb des Publish-Fensters "
+            f"{BOT_MIN_PUBLISH_SCORE}-{BOT_HARD_CAP}"
+        )
     if f"BOT SCORE: {metadata['score']}" not in metadata["description"]:
         raise ValueError("Beschreibung widerspricht dem Score")
     if not Path(metadata["video_path"]).is_file():
