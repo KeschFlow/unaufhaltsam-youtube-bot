@@ -54,7 +54,7 @@ class Config:
             publish_mode=mode,
             max_runs_per_day=_integer("MAX_RUNS_PER_DAY", 20, 1),
             max_uploads_per_day=_integer("MAX_UPLOADS_PER_DAY", 1, 1),
-            minimum_publish_score=_integer("MINIMUM_PUBLISH_SCORE", 10, 0),
+            minimum_publish_score=_integer("MINIMUM_PUBLISH_SCORE", 0, 0),
             cooldown_minutes=_integer("COOLDOWN_MINUTES", 30, 0),
             browser_retries=_integer("BROWSER_RETRIES", 2, 0),
             run_timeout_seconds=_integer("RUN_TIMEOUT_SECONDS", 180, 10),
