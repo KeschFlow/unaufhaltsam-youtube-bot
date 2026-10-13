@@ -7,8 +7,8 @@ from pathlib import Path
 import hashlib
 from typing import Any
 
-BOT_HARD_CAP = 15
-BOT_MIN_PUBLISH_SCORE = 10
+BOT_HARD_CAP = 30
+BOT_MIN_PUBLISH_SCORE = 0
 
 
 @dataclass(frozen=True)
@@ -59,7 +59,7 @@ class RunResult:
                 f"HARD CAP ERROR: Bot-Score {self.reached_boxes} ueberschreitet {BOT_HARD_CAP}"
             )
         if self.cap_reached and self.reached_boxes != BOT_HARD_CAP:
-            raise ValueError("CAP_REACHED ist nur bei exakt 15 Boxen zulaessig")
+            raise ValueError("CAP_REACHED ist nur bei exakt 30 Boxen zulaessig")
         if self.duration_seconds < 0 or not Path(self.recording_path).is_file():
             raise ValueError("Run-Aufzeichnung fehlt oder Dauer ist ungueltig")
         if not self.leaderboard_untouched:
