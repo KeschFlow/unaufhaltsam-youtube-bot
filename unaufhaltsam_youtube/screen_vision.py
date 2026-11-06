@@ -39,6 +39,17 @@ def _components(mask, width, height):
     return result
 
 
+def make_ocr_mask(image_path: str, output_path: str) -> None:
+    """Expose bright on-screen lettering to OCR; image pixels only."""
+    image = Image.open(image_path).convert("RGB")
+    output = Image.new("L", image.size)
+    output.putdata([
+        0 if min(rgb) > 170 and max(rgb) - min(rgb) < 65 else 255
+        for rgb in image.getdata()
+    ])
+    output.save(output_path)
+
+
 def observe(image_path: str, centers=None):
     image = Image.open(image_path).convert("RGB")
     width, height = image.size
@@ -71,6 +82,9 @@ def observe(image_path: str, centers=None):
 
 
 if __name__ == "__main__":
-    path = sys.argv[1]
-    known = json.loads(sys.argv[2]) if len(sys.argv) > 2 else None
-    print(json.dumps(observe(path, known)))
+    if len(sys.argv) == 4 and sys.argv[1] == "--ocr-mask":
+        make_ocr_mask(sys.argv[2], sys.argv[3])
+    else:
+        path = sys.argv[1]
+        known = json.loads(sys.argv[2]) if len(sys.argv) > 2 else None
+        print(json.dumps(observe(path, known)))
