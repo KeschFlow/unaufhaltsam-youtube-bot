@@ -30,7 +30,7 @@ def main() -> int:
     os.environ.pop("PUBLISH_MODE", None)
     os.environ["MAX_RUNS_PER_DAY"] = "20"
     os.environ["MAX_UPLOADS_PER_DAY"] = "1"
-    os.environ["MINIMUM_PUBLISH_SCORE"] = "10"
+    os.environ["MINIMUM_PUBLISH_SCORE"] = "0"
     os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(
         Path("C:/Users/kesch/AppData/Local/ms-playwright")
     )
