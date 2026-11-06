@@ -8,7 +8,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 
 from unaufhaltsam_youtube.models import RunResult
-from unaufhaltsam_youtube.screen_vision import observe
+from unaufhaltsam_youtube.screen_vision import observe, make_ocr_mask
 from unaufhaltsam_youtube.database import Database
 from unaufhaltsam_youtube.config import Config
 from unaufhaltsam_youtube.publisher import PublishError, publish
@@ -27,6 +27,18 @@ class FairnessV1Tests(unittest.TestCase):
             self.assertEqual(len(result["cells"]), 2)
             self.assertTrue(all(abs(x - expected_x) <= 2 and abs(y - 841) <= 2 for (x, y), expected_x in zip(result["cells"], (441, 537))))
             self.assertTrue(all(abs(a - b) <= 2 for a, b in zip(result["focus"], (441, 841))))
+
+    def test_ocr_mask_detects_visible_white_text_on_purple(self):
+        with tempfile.TemporaryDirectory() as folder:
+            frame = Path(folder) / "frame.png"
+            mask = Path(folder) / "mask.png"
+            image = Image.new("RGB", (200, 100), (128, 0, 128))
+            image.putpixel((50, 50), (255, 255, 255))
+            image.save(frame)
+            make_ocr_mask(str(frame), str(mask))
+            result = Image.open(mask)
+            self.assertEqual(result.getpixel((50, 50)), 0)
+            self.assertEqual(result.getpixel((100, 50)), 255)
 
     def test_privileged_or_unattested_run_is_rejected(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -49,6 +61,10 @@ class FairnessV1Tests(unittest.TestCase):
             self.assertNotIn(prohibited, source)
         self.assertIn("page.screenshot", source)
         self.assertIn("page.mouse.click", source)
+        self.assertIn('"tsv"', source)
+        self.assertIn("clickVisualStart", source)
+        self.assertNotIn("page.getByRole(", source)
+        self.assertNotIn("page.getByText(", source)
 
     def test_public_upload_rejects_legacy_evidence_before_oauth(self):
         with tempfile.TemporaryDirectory() as folder:

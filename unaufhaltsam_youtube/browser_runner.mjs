@@ -56,6 +56,55 @@ function sameCells(a, b) {
   return a.length === b.length && a.every((point, i) => Math.hypot(point[0] - b[i][0], point[1] - b[i][1]) < 16);
 }
 
+function wordsInScreenshot(file) {
+  // Tesseract reads pixels from a recorded frame; no DOM/game identity access.
+  const maskFile = `${file}.ocr.png`;
+  execFileSync("python", [observer, "--ocr-mask", file, maskFile], { timeout: 10000 });
+  let tsv;
+  try {
+    tsv = execFileSync("tesseract", [maskFile, "stdout", "--psm", "11", "tsv"], {
+      encoding: "utf8", timeout: 10000,
+    });
+  } finally {
+    fs.rmSync(maskFile, { force: true });
+  }
+  return tsv.trim().split("\n").slice(1).map(line => {
+    const fields = line.split("\t");
+    return {
+      text: (fields.slice(11).join("\t") || "").trim().toUpperCase(),
+      confidence: Number(fields[10]),
+      left: Number(fields[6]), top: Number(fields[7]),
+      width: Number(fields[8]), height: Number(fields[9]),
+    };
+  }).filter(word => word.text && word.confidence >= 25 &&
+    word.width > 0 && word.height > 0);
+}
+async function clickVisualStart(deadline) {
+  while (Date.now() < deadline) {
+    const file = await screenshot("start-scan");
+    const words = wordsInScreenshot(file);
+    const startWord = words.find(word => word.text.replace(/[^A-Z]/g, "") === "START");
+    if (startWord) {
+      const x = Math.round(startWord.left + startWord.width / 2);
+      const y = Math.round(startWord.top + startWord.height / 2);
+      event("visual_start_click", { x, y, frame_sha256: sha(fs.readFileSync(file)) });
+      await page.mouse.click(x, y);
+      return;
+    }
+    const notNeeded = words.findIndex(word => word.text === "NUR");
+    if (notNeeded >= 0 && words.slice(notNeeded + 1, notNeeded + 4)
+      .some(word => word.text.replace(/[^A-Z]/g, "") === "NOTWENDIGE")) {
+      const word = words[notNeeded];
+      const x = Math.round(word.left + word.width / 2);
+      const y = Math.round(word.top + word.height / 2);
+      event("visual_consent_click", { x, y });
+      await page.mouse.click(x, y);
+    }
+    await page.waitForTimeout(1000);
+  }
+  throw new Error("START_NOT_VISIBLE: no START label found in screenshot within 30 seconds");
+}
+
 async function playRound(round, deadline) {
   // The focus and all click targets are obtained from screenshots alone.
   const initialFile = await screenshot(`round-${round}-focus`);
@@ -126,10 +175,8 @@ try {
   page.on("dialog", dialog => dialog.dismiss());
   await page.goto(gameUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
   event("game_opened", { url: page.url(), strategy });
-  const deny = page.getByRole("button", { name: "NUR NOTWENDIGE" });
-  if (await deny.isVisible()) await deny.click();
   await screenshot("before-start");
-  await page.getByRole("button", { name: "START", exact: true }).click();
+  await clickVisualStart(Date.now() + 30000);
   await page.waitForTimeout(200);
   let roundsCompleted = 0;
   let failed = false;
